@@ -27,18 +27,23 @@ public class CaesiumClassWriter extends ClassWriter {
         if ("java/lang/Object".equals(type1) || "java/lang/Object".equals(type2))
             return "java/lang/Object";
 
+        if (!PreRuntime.getClassPath().containsKey(type1) || !PreRuntime.getClassPath().containsKey(type2)) {
+            logger.debug("Classpath missing '{}' or '{}', falling back to java/lang/Object", type1, type2);
+            return "java/lang/Object";
+        }
+
         String first = null;
         try {
             first = deriveCommonSuperName(type1, type2);
         } catch (CaesiumException e) {
-            e.printStackTrace();
+            // suppressed — fallthrough to second attempt
         }
 
         String second = null;
         try {
             second = deriveCommonSuperName(type2, type1);
         } catch (CaesiumException e) {
-            e.printStackTrace();
+            // suppressed — fallthrough to superclass walk
         }
 
         if (first != null && !"java/lang/Object".equals(first))
@@ -53,7 +58,7 @@ public class CaesiumClassWriter extends ClassWriter {
             if (c1.superName != null && c2.superName != null)
                 return getCommonSuperClass(c1.superName, c2.superName);
         } catch (CaesiumException e) {
-            e.printStackTrace();
+            // suppressed — fallthrough to safe default
         }
 
         return "java/lang/Object";
@@ -69,7 +74,11 @@ public class CaesiumClassWriter extends ClassWriter {
         else if (Modifier.isInterface(first.access) || Modifier.isInterface(second.access))
             return "java/lang/Object";
         else {
+            // FIX: guard against a null superName (e.g. java/lang/Object itself or
+            // a broken class entry) to prevent a NullPointerException in the do-while loop.
             do {
+                if (first.superName == null)
+                    return "java/lang/Object";
                 type1 = first.superName;
                 first = returnClazz(type1);
             } while (!isAssignableFrom(type1, type2));
@@ -80,7 +89,6 @@ public class CaesiumClassWriter extends ClassWriter {
     private ClassNode returnClazz(String ref) throws CaesiumException {
         ClassWrapper clazz = PreRuntime.getClassPath().get(ref);
         if (clazz == null) {
-            logger.warn("Couldn't find {} in classpath, falling back to java/lang/Object", ref);
             throw new CaesiumException(ref + " does not exist in classpath!", null);
         }
 
@@ -106,9 +114,12 @@ public class CaesiumClassWriter extends ClassWriter {
         while (!toProcess.isEmpty()) {
             String s = toProcess.poll();
             if (allChildren.add(s)) {
-                returnClazz(s);
+                ClassWrapper wrapper = PreRuntime.getClassPath().get(s);
+                if (wrapper == null)
+                    continue;
                 ClassTree tempTree = getTree(s);
-                toProcess.addAll(tempTree.subClasses);
+                if (tempTree != null)
+                    toProcess.addAll(tempTree.subClasses);
             }
         }
         return allChildren.contains(type2);
@@ -117,6 +128,8 @@ public class CaesiumClassWriter extends ClassWriter {
     public ClassTree getTree(String ref) throws CaesiumException {
         if (!PreRuntime.getHierarchy().containsKey(ref)) {
             ClassWrapper wrapper = PreRuntime.getClassPath().get(ref);
+            if (wrapper == null)
+                return null;
             PreRuntime.buildHierarchy(wrapper, null);
         }
 
