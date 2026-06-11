@@ -2,6 +2,7 @@ package dev.sim0n.caesium;
 
 import dev.sim0n.caesium.config.CaesiumConfig;
 import dev.sim0n.caesium.config.ConfigLoader;
+import dev.sim0n.caesium.exception.CaesiumException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -43,6 +44,18 @@ public class Start implements Callable<Integer> {
                 Caesium.getLogger().warn("Unknown dictionary '{}', using default NUMBERS", config.getDictionary());
             }
         }
+
+        PreRuntime.loadJavaRuntime();
+
+        if (config.getLibraries() != null) {
+            for (String lib : config.getLibraries()) {
+                PreRuntime.libraries.addElement(lib);
+            }
+        }
+
+        PreRuntime.loadClassPath();
+        PreRuntime.loadInput(input.getAbsolutePath());
+        PreRuntime.buildInheritance();
 
         return caesium.run(input, output);
     }
